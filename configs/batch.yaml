@@ -1,0 +1,6 @@
+start_url_path: "/"
+variants: ["A", "B"]
+personas: ["p01.json", "p02.json"]
+runs_per_persona_per_variant: 3
+delay_seconds_between_starts: 10
+debug_show_screens: false

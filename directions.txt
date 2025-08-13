@@ -1,0 +1,320 @@
+You are operating inside a GitHub repo intended to mimic UXAgent using OpenAI Computer Use + Browserbase for Shopify synthetic shopper tests.
+
+# TASK 001 — Bootstrap repo per README and make it runnable
+
+## Objectives
+1) Ensure the vendor submodule for the OpenAI Computer Use sample app is present and initialized.  
+2) Create the minimal orchestration layer (scripts, configs, personas, deps).  
+3) Provide deterministic installs on Apple Silicon and a clean “single run” path.  
+4) Leave the repo in a pushed, green state on branch `main`.
+
+## Pre-flight
+- Use the current working directory as the repo root.
+- If the default branch isn’t `main`, set it: `git branch -M main`.
+- Ensure `.gitignore` ignores `.venv/` and `.env`.
+
+Add or update `.gitignore` (append if file exists):
+.venv/
+.env
+pycache/
+.DS_Store
+runs/
+## Vendor submodule
+- If `vendor/openai-cua-sample-app/` is missing OR not initialized, run:
+  - `git submodule add https://github.com/openai/openai-cua-sample-app vendor/openai-cua-sample-app` (ignore if already added)
+  - `git submodule update --init --recursive`
+
+## Files to CREATE/UPDATE (exact content)
+
+1) `requirements.txt`
+python-dotenv==1.0.1
+pydantic==2.10.6
+PyYAML==6.0.2
+rich==13.7.1
+browserbase==1.6.0
+2) `.env.example`
+OPENAI_API_KEY=
+OPENAI_ORG=
+BROWSERBASE_API_KEY=
+BROWSERBASE_PROJECT_ID=
+
+SHOP_BASE_DOMAIN=
+SHOP_START_PATH=/
+3) `configs/batch.yaml`
+start_url_path: “/”
+variants: [“A”, “B”]
+personas: [“p01.json”, “p02.json”]
+runs_per_persona_per_variant: 3
+delay_seconds_between_starts: 10
+debug_show_screens: false
+4) `personas/p01.json`
+{
+“id”: “P01”,
+“name”: “price_sensitive_power_user”,
+“goals”: [“Find a ceramic mug”, “Pick a neutral color”, “Add to cart”],
+“profile”: {
+“budget”: “under $25”,
+“prefers”: [“fast shipping”, “clear sizing”, “minimalist design”]
+},
+“style”: “decisive and impatient”
+}
+5) `personas/p02.json`
+{
+“id”: “P02”,
+“name”: “aesthetic_maximalist_browser”,
+“goals”: [“Browse mugs”, “Read 1-2 reviews”, “Add any mug to cart”],
+“profile”: {
+“budget”: “flexible”,
+“prefers”: [“bold colors”, “detailed photos”, “lifestyle imagery”]
+},
+“style”: “curious and easily distracted”
+}
+6) `scripts/run_once.py`
+```python
+import os, json, uuid, subprocess, sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parents[1]
+VENDOR_CLI = ROOT / "vendor" / "openai-cua-sample-app" / "cli.py"
+
+def fail(msg: str):
+    print(f"[ERROR] {msg}", file=sys.stderr)
+    sys.exit(1)
+
+def require_env(keys):
+    missing = [k for k in keys if not os.environ.get(k)]
+    if missing:
+        fail(f"Missing env vars: {', '.join(missing)}")
+
+def build_start_url(base_domain: str, start_path: str, persona_id: str, variant: str, run_id: str):
+    if not start_path.startswith("/"):
+        start_path = "/" + start_path
+    return f"https://{base_domain}{start_path}?uxagent=1&persona={persona_id}&variant={variant}&run={run_id}"
+
+def build_prompt(persona: dict, start_url: str):
+    goals = "; ".join(persona.get("goals", []))
+    style = persona.get("style", "neutral")
+    profile = persona.get("profile", {})
+    return (
+        f"You are a shopper persona: {persona['name']} ({persona['id']}). "
+        f"Style: {style}. Profile: {json.dumps(profile)}. "
+        f"Start at {start_url} and accomplish: {goals}. "
+        "If a cookie/consent banner appears, accept it. Use site nav or search. "
+        "Once a product is added to cart, stop."
+    )
+
+def main():
+    import argparse
+    load_dotenv()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--persona", required=True, help="path to persona JSON (under personas/)")
+    parser.add_argument("--variant", required=True, choices=["A","B"])
+    parser.add_argument("--show", action="store_true", help="if supported by vendor CLI, show UI")
+    args = parser.parse_args()
+
+    require_env(["OPENAI_API_KEY", "BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID", "SHOP_BASE_DOMAIN"])
+    start_path = os.environ.get("SHOP_START_PATH", "/")
+    base_domain = os.environ["SHOP_BASE_DOMAIN"]
+
+    persona_path = Path(args.persona)
+    persona = json.loads(persona_path.read_text())
+    run_id = str(uuid.uuid4())[:8]
+    start_url = build_start_url(base_domain, start_path, persona["id"], args.variant, run_id)
+    prompt = build_prompt(persona, start_url)
+
+    if not VENDOR_CLI.exists():
+        fail(f"Vendor CLI not found at {VENDOR_CLI}. Did you init the submodule?")
+
+    cmd = [
+        sys.executable, str(VENDOR_CLI),
+        "--computer", "browserbase",
+        "--start-url", start_url,
+        "--input", prompt
+    ]
+    if args.show:
+        cmd.append("--show")
+
+    print(f"[run {run_id}] persona={persona['id']} variant={args.variant} url={start_url}")
+    code = subprocess.call(cmd, env=os.environ.copy())
+    if code != 0:
+        fail(f"Vendor CLI exited with {code}")
+
+if __name__ == "__main__":
+    main()
+6) `scripts/run_once.py`
+```python
+import os, json, uuid, subprocess, sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parents[1]
+VENDOR_CLI = ROOT / "vendor" / "openai-cua-sample-app" / "cli.py"
+
+def fail(msg: str):
+    print(f"[ERROR] {msg}", file=sys.stderr)
+    sys.exit(1)
+
+def require_env(keys):
+    missing = [k for k in keys if not os.environ.get(k)]
+    if missing:
+        fail(f"Missing env vars: {', '.join(missing)}")
+
+def build_start_url(base_domain: str, start_path: str, persona_id: str, variant: str, run_id: str):
+    if not start_path.startswith("/"):
+        start_path = "/" + start_path
+    return f"https://{base_domain}{start_path}?uxagent=1&persona={persona_id}&variant={variant}&run={run_id}"
+
+def build_prompt(persona: dict, start_url: str):
+    goals = "; ".join(persona.get("goals", []))
+    style = persona.get("style", "neutral")
+    profile = persona.get("profile", {})
+    return (
+        f"You are a shopper persona: {persona['name']} ({persona['id']}). "
+        f"Style: {style}. Profile: {json.dumps(profile)}. "
+        f"Start at {start_url} and accomplish: {goals}. "
+        "If a cookie/consent banner appears, accept it. Use site nav or search. "
+        "Once a product is added to cart, stop."
+    )
+
+def main():
+    import argparse
+    load_dotenv()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--persona", required=True, help="path to persona JSON (under personas/)")
+    parser.add_argument("--variant", required=True, choices=["A","B"])
+    parser.add_argument("--show", action="store_true", help="if supported by vendor CLI, show UI")
+    args = parser.parse_args()
+
+    require_env(["OPENAI_API_KEY", "BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID", "SHOP_BASE_DOMAIN"])
+    start_path = os.environ.get("SHOP_START_PATH", "/")
+    base_domain = os.environ["SHOP_BASE_DOMAIN"]
+
+    persona_path = Path(args.persona)
+    persona = json.loads(persona_path.read_text())
+    run_id = str(uuid.uuid4())[:8]
+    start_url = build_start_url(base_domain, start_path, persona["id"], args.variant, run_id)
+    prompt = build_prompt(persona, start_url)
+
+    if not VENDOR_CLI.exists():
+        fail(f"Vendor CLI not found at {VENDOR_CLI}. Did you init the submodule?")
+
+    cmd = [
+        sys.executable, str(VENDOR_CLI),
+        "--computer", "browserbase",
+        "--start-url", start_url,
+        "--input", prompt
+    ]
+    if args.show:
+        cmd.append("--show")
+
+    print(f"[run {run_id}] persona={persona['id']} variant={args.variant} url={start_url}")
+    code = subprocess.call(cmd, env=os.environ.copy())
+    if code != 0:
+        fail(f"Vendor CLI exited with {code}")
+
+if __name__ == "__main__":
+    main()
+6) `scripts/run_once.py`
+```python
+import os, json, uuid, subprocess, sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parents[1]
+VENDOR_CLI = ROOT / "vendor" / "openai-cua-sample-app" / "cli.py"
+
+def fail(msg: str):
+    print(f"[ERROR] {msg}", file=sys.stderr)
+    sys.exit(1)
+
+def require_env(keys):
+    missing = [k for k in keys if not os.environ.get(k)]
+    if missing:
+        fail(f"Missing env vars: {', '.join(missing)}")
+
+def build_start_url(base_domain: str, start_path: str, persona_id: str, variant: str, run_id: str):
+    if not start_path.startswith("/"):
+        start_path = "/" + start_path
+    return f"https://{base_domain}{start_path}?uxagent=1&persona={persona_id}&variant={variant}&run={run_id}"
+
+def build_prompt(persona: dict, start_url: str):
+    goals = "; ".join(persona.get("goals", []))
+    style = persona.get("style", "neutral")
+    profile = persona.get("profile", {})
+    return (
+        f"You are a shopper persona: {persona['name']} ({persona['id']}). "
+        f"Style: {style}. Profile: {json.dumps(profile)}. "
+        f"Start at {start_url} and accomplish: {goals}. "
+        "If a cookie/consent banner appears, accept it. Use site nav or search. "
+        "Once a product is added to cart, stop."
+    )
+
+def main():
+    import argparse
+    load_dotenv()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--persona", required=True, help="path to persona JSON (under personas/)")
+    parser.add_argument("--variant", required=True, choices=["A","B"])
+    parser.add_argument("--show", action="store_true", help="if supported by vendor CLI, show UI")
+    args = parser.parse_args()
+
+    require_env(["OPENAI_API_KEY", "BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID", "SHOP_BASE_DOMAIN"])
+    start_path = os.environ.get("SHOP_START_PATH", "/")
+    base_domain = os.environ["SHOP_BASE_DOMAIN"]
+
+    persona_path = Path(args.persona)
+    persona = json.loads(persona_path.read_text())
+    run_id = str(uuid.uuid4())[:8]
+    start_url = build_start_url(base_domain, start_path, persona["id"], args.variant, run_id)
+    prompt = build_prompt(persona, start_url)
+
+    if not VENDOR_CLI.exists():
+        fail(f"Vendor CLI not found at {VENDOR_CLI}. Did you init the submodule?")
+
+    cmd = [
+        sys.executable, str(VENDOR_CLI),
+        "--computer", "browserbase",
+        "--start-url", start_url,
+        "--input", prompt
+    ]
+    if args.show:
+        cmd.append("--show")
+
+    print(f"[run {run_id}] persona={persona['id']} variant={args.variant} url={start_url}")
+    code = subprocess.call(cmd, env=os.environ.copy())
+    if code != 0:
+        fail(f"Vendor CLI exited with {code}")
+
+if __name__ == "__main__":
+    main()
+	8.	Makefile (optional but recommended)
+.PHONY: venv vendor install run batch
+venv:
+	python3 -m venv .venv
+
+vendor:
+	git submodule update --init --recursive
+
+install: venv vendor
+	. .venv/bin/activate; pip install -r requirements.txt; pip install -r vendor/openai-cua-sample-app/requirements.txt
+
+run:
+	. .venv/bin/activate; python scripts/run_once.py --persona personas/p01.json --variant A
+
+batch:
+	. .venv/bin/activate; python scripts/batch.py
+Acceptance criteria
+	•	Submodule present and initialized.
+	•	requirements.txt, .env.example, configs/batch.yaml, personas/p01.json, personas/p02.json, scripts/run_once.py, scripts/batch.py exist with the exact content above.
+	•	python scripts/run_once.py --persona personas/p01.json --variant A returns exit code 0 (if credentials are valid).
+	•	Batch script throttles runs according to configs/batch.yaml.
+	•	Repo pushed to main with the above commit message.
+Notes
+	•	Do not modify vendor code.
+	•	Keep all new code PEP8-clean.
+	•	Scripts must be idempotent and relative-path safe from repo root.
+When that’s done, we’ll do Task 002 (Hotjar snippet insertion + A/B targeting check + run artifact capture).

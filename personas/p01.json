@@ -1,0 +1,14 @@
+{
+  "id": "P01",
+  "name": "price_sensitive_power_user",
+  "goals": [
+    "Find a ceramic mug",
+    "Pick a neutral color",
+    "Add to cart"
+  ],
+  "profile": {
+    "budget": "under $25",
+    "prefers": ["fast shipping", "clear sizing", "minimalist design"]
+  },
+  "style": "decisive and impatient"
+}

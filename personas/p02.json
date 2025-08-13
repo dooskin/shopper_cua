@@ -1,0 +1,14 @@
+{
+  "id": "P02",
+  "name": "aesthetic_maximalist_browser",
+  "goals": [
+    "Browse mugs",
+    "Read 1-2 reviews",
+    "Add any mug to cart"
+  ],
+  "profile": {
+    "budget": "flexible",
+    "prefers": ["bold colors", "detailed photos", "lifestyle imagery"]
+  },
+  "style": "curious and easily distracted"
+}
